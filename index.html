@@ -278,8 +278,17 @@ const fmtStamp = t => { const d = new Date(t); return `${pad(d.getDate())} ${MES
 const fmtHours = h => (Math.round(h * 10) / 10).toString().replace('.', ',') + ' h';
 
 /* ---------- códigos y horarios ---------- */
-const codeInfo = c => S.settings.codes[c] || null;
-const kls = c => !c ? 'rest' : (['C', 'M', 'T', 'N'].includes(c) ? 'k-' + c : 'k-X');
+// Códigos compuestos del cuadro: letra del turno + marca del día (ND = noche dominical, CF = completo festivo).
+const SUFIJO = { D: 'dominical', F: 'festivo', S: 'sábado', '*': '(con nota)' };
+function codeInfo(c) {
+  const k = S.settings.codes;
+  if (!c) return null;
+  if (k[c]) return { ...k[c], base: c };
+  const b = k[c[0]], suf = [...c.slice(1)];
+  if (b && c.length <= 3 && suf.every(x => SUFIJO[x])) return { ...b, base: c[0], name: `${b.name} ${suf.map(x => SUFIJO[x]).join(' ')}` };
+  return null;
+}
+const kls = c => { if (!c) return 'rest'; const b = codeInfo(c)?.base?.[0]; return ['C', 'M', 'T', 'N'].includes(b) ? 'k-' + b : 'k-X'; };
 const codeName = c => !c ? 'Descanso' : (codeInfo(c)?.name || `Código ${c}`);
 const chip = c => `<span class="chip ${kls(c)}">${c ? esc(c) : '—'}</span>`;
 function shiftRange(date, code, start, end) {
@@ -334,20 +343,27 @@ function parseSheet(ws, forcedYear) {
   });
   if (!best) return null;
 
-  const title = rows.slice(0, best.r).flat().map(v => String(v).trim()).filter(Boolean).join(' · ');
+  const title = rows.slice(0, best.r).flat().map(v => String(v).trim()).filter(v => v.length > 2).join(' · ');
   const tn = norm(title);
   const useFull = best.full >= 3;
   const cols = best.cells.filter(x => useFull ? x.p.m : !x.p.m).map(x => ({ c: x.c, ...x.p }));
-
-  // Encabezados con solo el número del día: el mes sale del título (o del mes actual).
-  if (!useFull) {
-    const w = tn.split(/[^a-z]+/).find(w => MES_LARGO.includes(w) || ['setiembre'].includes(w));
-    let mo = w ? MESES[w.slice(0, 3)] : new Date().getMonth() + 1, prev = 0;
-    for (const x of cols) { if (x.d < prev) mo = mo % 12 + 1; x.m = mo; prev = x.d; }
-  }
-  // Año: el del encabezado, el del título, o el que deja la primera fecha más cerca de hoy.
   const now = new Date();
-  let y = forcedYear || cols[0].y || (tn.match(/\b(20\d{2})\b/) || [])[1];
+
+  // Encabezados con solo el número del día (28 29 30 1 2 … 31 1): el mes del título es el del tramo
+  // más largo; los tramos anteriores son del mes previo y los siguientes del mes siguiente.
+  let wrapsBefore = 0;
+  if (!useFull) {
+    const w = tn.split(/[^a-z]+/).find(w => MES_LARGO.includes(w) || w === 'setiembre');
+    const named = w ? MESES[w.slice(0, 3)] : now.getMonth() + 1;
+    const segs = [[]];
+    cols.forEach((x, i) => { if (i && x.d < cols[i - 1].d) segs.push([]); segs[segs.length - 1].push(x); });
+    const bi = segs.reduce((b, s, i) => s.length > segs[b].length ? i : b, 0);
+    segs.forEach((s, i) => { const m = ((named - 1 + i - bi) % 12 + 12) % 12 + 1; s.forEach(x => { x.m = m; }); });
+    for (let i = 0; i < bi; i++) if (segs[i][0].m === 12) wrapsBefore++;
+  }
+  // Año: el del encabezado, el del título (es el del mes principal), o el que deja la primera fecha más cerca de hoy.
+  const titleYear = (tn.match(/\b(20\d{2})\b/) || [])[1];
+  let y = forcedYear || cols[0].y || (titleYear && +titleYear - wrapsBefore);
   if (!y) {
     let bestDiff = Infinity;
     for (const cand of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
@@ -375,7 +391,10 @@ function parseSheet(ws, forcedYear) {
     const row = rows[r];
     if (row.filter(v => parseHeaderCell(v)?.m).length >= 3) continue; // otra fila de fechas
     const vals = dates.map(x => normCode(row[x.c]));
-    if (vals.every(v => v === '')) continue;
+    const filled = vals.filter(Boolean);
+    if (!filled.length) continue;
+    if (filled.length === 1 && filled[0].length > 4) continue; // fila de nota: "Incapacidad - Licencia de Maternidad"
+    if (filled.every(v => /^\d+$/.test(v))) continue;          // filas de conteo de personal por turno (1, 2, …)
     let name = row.slice(0, firstCol).map(v => String(v).trim()).filter(v => v && !/^\d+$/.test(v)).join(' ');
     if (!name) name = `Fila ${r + 1}`;
     const days = {};
@@ -393,6 +412,7 @@ $('#file-xlsx').addEventListener('change', async e => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
+  if (/\.pdf$/i.test(f.name)) { toast('Ese es el PDF. Carga la versión en Excel del cuadro (.xlsx).'); return; }
   if (typeof XLSX === 'undefined') { toast('No se pudo cargar el lector de Excel. Revisa la conexión a internet y vuelve a abrir la página.'); return; }
   try {
     const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
@@ -422,7 +442,10 @@ function renderImport() {
   imp.parsed = p;
   const person = p.people[idx];
   const unknown = [...new Set(Object.values(person.days).filter(c => c && !codeInfo(c)))];
+  const compound = [...new Set(Object.values(person.days).filter(c => c && !S.settings.codes[c] && codeInfo(c)))].sort();
   const work = Object.values(person.days).filter(Boolean).length;
+  const noNames = p.people.every(x => x.name.startsWith('Fila '));
+  const label = x => noNames ? `${x.name} · ${p.dates.slice(0, 10).map(d => x.days[d] || '·').join(' ')}` : x.name;
   openSheet(`
     <h2>Revisar antes de guardar</h2>
     <p class="muted small">${esc(imp.file)} · hoja ${esc(imp.sheet)}</p>
@@ -430,12 +453,14 @@ function renderImport() {
     ${sheetSel}
     <div class="fields">
       <div class="field full"><label for="imp-person">¿Cuál fila es la tuya?</label>
-        <select id="imp-person">${p.people.map((x, i) => `<option value="${i}" ${i === idx ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+        <select id="imp-person">${p.people.map((x, i) => `<option value="${i}" ${i === idx ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>
+        ${noNames ? `<p class="small muted">Este cuadro no trae nombres. Reconoce tu fila por los primeros días; en una versión nueva podría cambiar de posición, así que revísala cada vez.</p>` : ''}</div>
       <div class="field"><span class="lbl">Periodo</span><span><b>${fmtShort(p.from)}</b> → <b>${fmtShort(p.to)}</b></span></div>
       <div class="field"><label for="imp-year">Año de inicio</label><input id="imp-year" type="number" inputmode="numeric" value="${p.startYear}"></div>
     </div>
     <div class="strip">${p.dates.map(d => `<div>${chip(person.days[d])}${pad(toDate(d).getDate())}</div>`).join('')}</div>
     <p class="small muted">${p.dates.length} días · ${work} con turno · ${p.dates.length - work} de descanso</p>
+    ${compound.length ? `<p class="small muted">Interpreté: ${compound.map(c => `<b>${esc(c)}</b> = ${esc(codeInfo(c).name)}`).join(', ')}. Si alguno significa otra cosa, defínelo en Ajustes.</p>` : ''}
     ${unknown.length ? `<div class="notice">Códigos que no conozco: <b>${unknown.map(esc).join(', ')}</b>. Se guardan igual; defínelos en Ajustes para darles horario.</div>` : ''}
     ${S.demo ? `<div class="notice">Se borrarán los datos de ejemplo.</div>` : ''}
     <div class="row"><button class="btn primary grow" data-act="imp-save">Guardar turnos</button><button class="btn" data-act="close">Cancelar</button></div>`);
@@ -635,10 +660,10 @@ function renderCal() {
       <span class="hr">${info && info.start ? info.start.slice(0, 2) + '–' + info.end.slice(0, 2) : ''}</span>${mk ? `<span class="mk">${mk}</span>` : ''}</button>`;
   }
   const counts = {}; let hours = 0;
-  for (let d = p.from; d <= p.to; d = addDays(d, 1)) { const c = S.shifts[d]?.code; if (c) { counts[c] = (counts[c] || 0) + 1; hours += hoursOf(d, c); } }
+  for (let d = p.from; d <= p.to; d = addDays(d, 1)) { const c = S.shifts[d]?.code; if (c) { const k = codeInfo(c)?.base || c; counts[k] = (counts[k] || 0) + 1; hours += hoursOf(d, c); } }
   const ex = S.extras.filter(x => x.date >= p.from && x.date <= p.to);
   const exH = ex.reduce((a, x) => a + (shiftRange(x.date, x.code, x.start, x.end)?.hours || 0), 0);
-  const order = [...Object.keys(S.settings.codes), ...Object.keys(counts).filter(c => !codeInfo(c))];
+  const order = [...Object.keys(S.settings.codes), ...Object.keys(counts).filter(c => !S.settings.codes[c])];
 
   el.innerHTML = `${nextBlock()}
     <div class="period"><select id="sel-period" aria-label="Periodo">${ps.map(x => `<option value="${x.key}" ${x.key === p.key ? 'selected' : ''}>${periodLabel(x)}</option>`).join('')}</select></div>
