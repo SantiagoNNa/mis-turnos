@@ -332,7 +332,8 @@ function parseHeaderCell(v) {
   return null;
 }
 
-function parseSheet(ws, forcedYear) {
+// ov: { month, year } elegidos por la persona en la pantalla de revisión; mandan sobre lo detectado.
+function parseSheet(ws, ov = {}) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true });
   let best = null;
   rows.forEach((row, r) => {
@@ -343,18 +344,19 @@ function parseSheet(ws, forcedYear) {
   });
   if (!best) return null;
 
-  const title = rows.slice(0, best.r).flat().map(v => String(v).trim()).filter(v => v.length > 2).join(' · ');
-  const tn = norm(title);
+  const head = rows.slice(0, best.r).flat().map(v => String(v).trim()).filter(v => v.length > 2);
+  const title = head[0] || '';
+  const tn = norm(head.join(' '));
   const useFull = best.full >= 3;
   const cols = best.cells.filter(x => useFull ? x.p.m : !x.p.m).map(x => ({ c: x.c, ...x.p }));
   const now = new Date();
 
   // Encabezados con solo el número del día (28 29 30 1 2 … 31 1): el mes del título es el del tramo
   // más largo; los tramos anteriores son del mes previo y los siguientes del mes siguiente.
-  let wrapsBefore = 0;
+  let wrapsBefore = 0, mainMonth = null;
   if (!useFull) {
     const w = tn.split(/[^a-z]+/).find(w => MES_LARGO.includes(w) || w === 'setiembre');
-    const named = w ? MESES[w.slice(0, 3)] : now.getMonth() + 1;
+    const named = mainMonth = ov.month || (w ? MESES[w.slice(0, 3)] : now.getMonth() + 1);
     const segs = [[]];
     cols.forEach((x, i) => { if (i && x.d < cols[i - 1].d) segs.push([]); segs[segs.length - 1].push(x); });
     const bi = segs.reduce((b, s, i) => s.length > segs[b].length ? i : b, 0);
@@ -363,7 +365,8 @@ function parseSheet(ws, forcedYear) {
   }
   // Año: el del encabezado, el del título (es el del mes principal), o el que deja la primera fecha más cerca de hoy.
   const titleYear = (tn.match(/\b(20\d{2})\b/) || [])[1];
-  let y = forcedYear || cols[0].y || (titleYear && +titleYear - wrapsBefore);
+  // Con días sueltos, el año elegido es el del mes principal; con fechas completas, el de la primera fecha.
+  let y = (ov.year && (useFull ? ov.year : ov.year - wrapsBefore)) || cols[0].y || (titleYear && +titleYear - wrapsBefore);
   if (!y) {
     let bestDiff = Infinity;
     for (const cand of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
@@ -377,7 +380,7 @@ function parseSheet(ws, forcedYear) {
   const seen = new Set();
   const dates = [];
   for (const x of cols) {
-    if (x.y && !forcedYear) y = x.y; else if (x.m < prevM) y++;
+    if (x.y && !ov.year) y = x.y; else if (x.m < prevM) y++;
     prevM = x.m;
     const s = iso(y, x.m, x.d);
     if (fromDate(toDate(s)) !== s || seen.has(s)) continue; // 31 nov, repetidos
@@ -402,7 +405,7 @@ function parseSheet(ws, forcedYear) {
     people.push({ name, row: r + 1, days });
   }
   if (!people.length) return null;
-  return { title, from: dates[0].iso, to: dates[dates.length - 1].iso, dates: dates.map(x => x.iso), people, startYear };
+  return { title, from: dates[0].iso, to: dates[dates.length - 1].iso, dates: dates.map(x => x.iso), people, startYear, dayOnly: !useFull, mainMonth, mainYear: startYear + wrapsBefore };
 }
 
 /* ---------- importar ---------- */
@@ -425,7 +428,7 @@ $('#file-xlsx').addEventListener('change', async e => {
 });
 
 function renderImport() {
-  const p = parseSheet(imp.wb.Sheets[imp.sheet], imp.year);
+  const p = parseSheet(imp.wb.Sheets[imp.sheet], { month: imp.month, year: imp.year });
   const sheetSel = imp.wb.SheetNames.length > 1
     ? `<div class="field"><label for="imp-sheet">Hoja</label><select id="imp-sheet">${imp.wb.SheetNames.map(n => `<option ${n === imp.sheet ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : '';
   if (!p) {
@@ -455,8 +458,11 @@ function renderImport() {
       <div class="field full"><label for="imp-person">¿Cuál fila es la tuya?</label>
         <select id="imp-person">${p.people.map((x, i) => `<option value="${i}" ${i === idx ? 'selected' : ''}>${esc(label(x))}</option>`).join('')}</select>
         ${noNames ? `<p class="small muted">Este cuadro no trae nombres. Reconoce tu fila por los primeros días; en una versión nueva podría cambiar de posición, así que revísala cada vez.</p>` : ''}</div>
-      <div class="field"><span class="lbl">Periodo</span><span><b>${fmtShort(p.from)}</b> → <b>${fmtShort(p.to)}</b></span></div>
-      <div class="field"><label for="imp-year">Año de inicio</label><input id="imp-year" type="number" inputmode="numeric" value="${p.startYear}"></div>
+      ${p.dayOnly
+        ? `<div class="field"><label for="imp-month">Mes del cuadro</label><select id="imp-month">${MES_LARGO.map((m, i) => `<option value="${i + 1}" ${i + 1 === p.mainMonth ? 'selected' : ''}>${cap(m)}</option>`).join('')}</select></div>
+           <div class="field"><label for="imp-year">Año</label><input id="imp-year" type="number" inputmode="numeric" value="${p.mainYear}"></div>`
+        : `<div class="field"><label for="imp-year">Año de inicio</label><input id="imp-year" type="number" inputmode="numeric" value="${p.startYear}"></div>`}
+      <div class="field full"><span class="lbl">Periodo resultante</span><span><b>${fmtShort(p.from)} ${toDate(p.from).getFullYear()}</b> → <b>${fmtShort(p.to)} ${toDate(p.to).getFullYear()}</b>${p.dayOnly ? ' <span class="small muted">(los días antes del 1 son del mes anterior)</span>' : ''}</span></div>
     </div>
     <div class="strip">${p.dates.map(d => `<div>${chip(person.days[d])}${pad(toDate(d).getDate())}</div>`).join('')}</div>
     <p class="small muted">${p.dates.length} días · ${work} con turno · ${p.dates.length - work} de descanso</p>
@@ -466,7 +472,8 @@ function renderImport() {
     <div class="row"><button class="btn primary grow" data-act="imp-save">Guardar turnos</button><button class="btn" data-act="close">Cancelar</button></div>`);
   $('#imp-person').onchange = e => { imp.person = p.people[+e.target.value].name; renderImport(); };
   $('#imp-year').onchange = e => { const v = +e.target.value; imp.year = v > 2000 && v < 2100 ? v : null; renderImport(); };
-  if ($('#imp-sheet')) $('#imp-sheet').onchange = e => { imp.sheet = e.target.value; imp.year = null; renderImport(); };
+  if ($('#imp-month')) $('#imp-month').onchange = e => { imp.month = +e.target.value; imp.year = imp.year || p.mainYear; renderImport(); };
+  if ($('#imp-sheet')) $('#imp-sheet').onchange = e => { imp.sheet = e.target.value; imp.year = imp.month = null; renderImport(); };
 }
 
 function recordChange(date, from, to, src, file, at) {
