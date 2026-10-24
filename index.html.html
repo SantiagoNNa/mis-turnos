@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e4f4a">
+<title>Mis Turnos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: app de una columna (máx. 640px), cabecera fija arriba, barra de pestañas abajo como app móvil.
+   Cada letra de turno tiene su propio color: es la información principal del calendario. */
+:root {
+  --bg: #eef3f2; --surface: #ffffff; --ink: #13201f; --muted: #586a68; --line: #d5dfdd;
+  --accent: #0e6b62; --accent-ink: #ffffff; --head: #0e4f4a; --head-ink: #e8f5f3;
+  --c-C: #0b7a5c; --c-C-bg: #d3efe4;
+  --c-M: #9a6410; --c-M-bg: #faecce;
+  --c-T: #b23c0c; --c-T-bg: #fcdfcd;
+  --c-N: #3f37c9; --c-N-bg: #dfe0fb;
+  --c-X: #5d6670; --c-X-bg: #e7ebee;
+  --warn: #9a5208; --warn-bg: #fff1dc; --danger: #b42318; --ok: #0b7a5c;
+  --f-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --f-body: 'Atkinson Hyperlegible', 'Segoe UI', system-ui, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --r: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0c1413; --surface: #15201f; --ink: #e4eeec; --muted: #94a7a4; --line: #263634;
+  --accent: #43c2b0; --accent-ink: #04201c; --head: #0f2a28; --head-ink: #d8efeb;
+  --c-C: #58d6aa; --c-C-bg: #123629;
+  --c-M: #f1bb57; --c-M-bg: #3a2b10;
+  --c-T: #ff9064; --c-T-bg: #3e2014;
+  --c-N: #a5a8ff; --c-N-bg: #24254d;
+  --c-X: #a7b0b9; --c-X-bg: #252c31;
+  --warn: #f3b35f; --warn-bg: #3a2a12; --danger: #ff7d70; --ok: #58d6aa;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0c1413; --surface: #15201f; --ink: #e4eeec; --muted: #94a7a4; --line: #263634;
+  --accent: #43c2b0; --accent-ink: #04201c; --head: #0f2a28; --head-ink: #d8efeb;
+  --c-C: #58d6aa; --c-C-bg: #123629;
+  --c-M: #f1bb57; --c-M-bg: #3a2b10;
+  --c-T: #ff9064; --c-T-bg: #3e2014;
+  --c-N: #a5a8ff; --c-N-bg: #24254d;
+  --c-X: #a7b0b9; --c-X-bg: #252c31;
+  --warn: #f3b35f; --warn-bg: #3a2a12; --danger: #ff7d70; --ok: #58d6aa;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.45 var(--f-body); -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+h2 { font-size: 1.3rem; font-weight: 800; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+
+.app { max-width: 640px; margin: 0 auto; min-height: 100vh; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+
+/* cabecera */
+.top { position: sticky; top: 0; z-index: 20; background: var(--head); color: var(--head-ink);
+  padding: calc(12px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  display: flex; align-items: center; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.brand h1 { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+.who { font-size: .82rem; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logo { width: 34px; height: 34px; border-radius: 9px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 4px; background: rgba(255,255,255,.12); flex: none; }
+.logo i { border-radius: 3px; display: block; }
+.icon-btn { background: transparent; border: 1px solid rgba(255,255,255,.25); color: inherit; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; cursor: pointer; flex: none; }
+.icon-btn svg { width: 20px; height: 20px; }
+
+main { padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); }
+.view { display: flex; flex-direction: column; gap: 16px; }
+
+/* botones */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-weight: 700; cursor: pointer; text-decoration: none; text-align: center; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.top .btn.primary { background: var(--head-ink); color: var(--head); border-color: var(--head-ink); }
+.btn.small { min-height: 36px; padding: 0 12px; font-size: .88rem; }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row > .grow { flex: 1; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.notice { border-radius: var(--r); padding: 12px 14px; background: var(--warn-bg); color: var(--warn); font-size: .92rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.notice strong { color: inherit; }
+.notice .btn { margin-left: auto; }
+
+/* chips de código */
+.chip { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; font-family: var(--f-display); font-weight: 800; font-size: .95rem; background: var(--c-X-bg); color: var(--c-X); }
+.chip.rest { background: transparent; border: 1px dashed var(--line); color: var(--muted); font-weight: 600; }
+.k-C { background: var(--c-C-bg); color: var(--c-C); }
+.k-M { background: var(--c-M-bg); color: var(--c-M); }
+.k-T { background: var(--c-T-bg); color: var(--c-T); }
+.k-N { background: var(--c-N-bg); color: var(--c-N); }
+.k-X { background: var(--c-X-bg); color: var(--c-X); }
+
+/* próximo turno */
+.next { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+.next .big { width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font: 800 2rem var(--f-display); }
+.next .label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; }
+.next .when { font: 800 1.35rem var(--f-display); }
+.next .hours { color: var(--muted); }
+
+/* calendario */
+.period { display: flex; gap: 8px; align-items: center; }
+.period select { flex: 1; min-width: 0; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); padding: 0 12px; font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.wd { text-align: center; font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding-bottom: 2px; }
+.day { position: relative; aspect-ratio: 1 / 1.18; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); padding: 3px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; cursor: pointer; min-width: 0; }
+.day .dn { font-size: .72rem; font-family: var(--f-mono); color: var(--muted); align-self: flex-start; line-height: 1; }
+.day .dn b { font-family: var(--f-body); text-transform: uppercase; font-size: .62rem; margin-left: 2px; }
+.day .cd { font: 800 1.15rem var(--f-display); line-height: 1; }
+.day .hr { font-size: .58rem; font-family: var(--f-mono); color: var(--muted); line-height: 1; min-height: .6rem; }
+.day.k-C, .day.k-M, .day.k-T, .day.k-N, .day.k-X { border-color: transparent; }
+.day.k-C .hr, .day.k-M .hr, .day.k-T .hr, .day.k-N .hr, .day.k-X .hr { color: inherit; opacity: .8; }
+.day.out { opacity: .35; }
+.day.past { opacity: .55; }
+.day.today { outline: 2.5px solid var(--ink); outline-offset: 1px; }
+.day .mk { position: absolute; top: 2px; right: 3px; display: flex; gap: 2px; }
+.day .mk span { font-size: .6rem; font-weight: 700; line-height: 1; padding: 2px 3px; border-radius: 4px; background: var(--ink); color: var(--surface); }
+.day .mk .chg { background: var(--warn); color: var(--surface); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: .85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .chip { min-width: 24px; height: 24px; font-size: .8rem; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font: 800 1.35rem var(--f-display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: .8rem; color: var(--muted); }
+
+/* listas */
+.list { display: flex; flex-direction: column; }
+.item { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); min-width: 0; }
+.item:first-child { border-top: 0; padding-top: 0; }
+.item .grow { flex: 1; min-width: 0; }
+.item .t { font-weight: 700; }
+.item .s { font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+.arrow { color: var(--muted); font-weight: 700; }
+.group-h { font-size: .78rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+.empty { text-align: center; padding: 28px 12px; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.empty h2 { color: var(--ink); }
+
+/* formularios */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label, .field .lbl { font-size: .85rem; font-weight: 700; color: var(--muted); }
+.field input, .field select { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); padding: 0 12px; width: 100%; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fields .full { grid-column: 1 / -1; }
+.check { display: flex; gap: 10px; align-items: center; font-weight: 700; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.codes-table { display: grid; grid-template-columns: 46px minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 36px; gap: 8px; align-items: center; }
+.codes-table input { min-height: 40px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); padding: 0 8px; width: 100%; }
+.codes-table .h { font-size: .75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.x-btn { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; color: var(--muted); }
+details.help { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 12px 16px; }
+details.help summary { cursor: pointer; font-weight: 700; }
+details.help ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+/* pestañas */
+.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+.tabs-in { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.tabs button { position: relative; background: none; border: 0; border-radius: 10px; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: .74rem; font-weight: 700; color: var(--muted); cursor: pointer; }
+.tabs button svg { width: 22px; height: 22px; }
+.tabs button[aria-current="page"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 18px; height: 18px; border-radius: 9px; background: var(--danger); color: #fff; font-size: .7rem; display: grid; place-items: center; padding: 0 4px; }
+
+/* hoja inferior */
+.sheet-wrap { position: fixed; inset: 0; z-index: 40; background: rgba(5, 15, 14, .5); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--surface); width: 100%; max-width: 640px; max-height: 92vh; overflow-y: auto; border-radius: 18px 18px 0 0;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+.strip { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+.strip div { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: .62rem; color: var(--muted); font-family: var(--f-mono); }
+.strip .chip { min-width: 26px; height: 26px; font-size: .8rem; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(92px + env(safe-area-inset-bottom, 0px)); z-index: 50; background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; max-width: calc(100% - 32px); font-weight: 700; font-size: .92rem; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: up .2s ease-out; } @keyframes up { from { transform: translateY(24px); opacity: .6; } } }
+@media (max-width: 380px) { .day .hr { display: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><i class="k-C"></i><i class="k-N"></i><i class="k-M"></i><i class="k-T"></i></span>
+      <div style="min-width:0"><h1>Mis Turnos</h1><p class="who" id="who"></p></div>
+    </div>
+    <label class="btn primary small" for="file-xlsx">Cargar Excel</label>
+    <input type="file" id="file-xlsx" accept=".xlsx,.xls,.xlsm,.ods,.csv" hidden>
+    <button class="icon-btn" id="btn-settings" aria-label="Ajustes" data-act="view" data-view="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+  <main>
+    <div id="banner"></div>
+    <section class="view" id="view-cal"></section>
+    <section class="view" id="view-changes" hidden></section>
+    <section class="view" id="view-extras" hidden></section>
+    <section class="view" id="view-sync" hidden></section>
+    <section class="view" id="view-settings" hidden></section>
+  </main>
+  <nav class="tabs" aria-label="Secciones">
+    <div class="tabs-in">
+      <button data-act="view" data-view="cal" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Turnos</button>
+      <button data-act="view" data-view="changes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Cambios<span class="badge" id="badge-changes" hidden></span></button>
+      <button data-act="view" data-view="extras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Extras</button>
+      <button data-act="view" data-view="sync"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Alarmas<span class="badge" id="badge-sync" hidden></span></button>
+    </div>
+  </nav>
+</div>
+<div class="sheet-wrap" id="sheet" hidden><div class="sheet" role="dialog" aria-modal="true" id="sheet-body"></div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const KEY = 'mis-turnos-v1';
+
+/* ---------- estado ---------- */
+const DEFAULT = () => ({
+  settings: {
+    person: '',
+    codes: {
+      C: { name: 'Completo', start: '07:00', end: '19:00' },
+      M: { name: 'Mañana', start: '07:00', end: '13:00' },
+      T: { name: 'Tarde', start: '13:00', end: '19:00' },
+      N: { name: 'Noche', start: '19:00', end: '07:00' },
+    },
+    alarmMin: 60, nightBefore: true, nightTime: '20:00',
+  },
+  shifts: {},     // 'YYYY-MM-DD' -> { code, src: 'excel' | 'manual' }
+  versions: [],   // cada Excel cargado
+  changes: [],    // historial de cambios, el más reciente primero
+  extras: [],     // turnos extra
+  synced: {},     // lo que ya está en el calendario del celular: fecha -> código
+  toDelete: [],   // eventos viejos que hay que borrar del calendario del celular
+  seq: {},        // versión de cada evento (.ics SEQUENCE)
+  seen: 0,        // momento en que se revisó la pestaña Cambios
+  demo: false,
+});
+let storageOK = true;
+let S; // se carga al final, cuando ya existen todas las funciones
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const d = JSON.parse(raw); const b = DEFAULT(); return { ...b, ...d, settings: { ...b.settings, ...(d.settings || {}) } }; }
+  } catch (e) { storageOK = false; }
+  return makeDemo(DEFAULT());
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); storageOK = true; } catch (e) { storageOK = false; }
+}
+
+/* ---------- fechas ---------- */
+const pad = n => String(n).padStart(2, '0');
+const iso = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+const toDate = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const fromDate = dt => iso(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+const addDays = (s, n) => { const d = toDate(s); d.setDate(d.getDate() + n); return fromDate(d); };
+const todayIso = () => fromDate(new Date());
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const DIA = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const DIA_LARGO = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const fmtShort = s => { const d = toDate(s); return `${DIA[d.getDay()]} ${pad(d.getDate())} ${MES[d.getMonth()]}`; };
+const fmtLong = s => { const d = toDate(s); return `${cap(DIA_LARGO[d.getDay()])} ${d.getDate()} de ${MES_LARGO[d.getMonth()]} de ${d.getFullYear()}`; };
+const fmtStamp = t => { const d = new Date(t); return `${pad(d.getDate())} ${MES[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtHours = h => (Math.round(h * 10) / 10).toString().replace('.', ',') + ' h';
+
+/* ---------- códigos y horarios ---------- */
+const codeInfo = c => S.settings.codes[c] || null;
+const kls = c => !c ? 'rest' : (['C', 'M', 'T', 'N'].includes(c) ? 'k-' + c : 'k-X');
+const codeName = c => !c ? 'Descanso' : (codeInfo(c)?.name || `Código ${c}`);
+const chip = c => `<span class="chip ${kls(c)}">${c ? esc(c) : '—'}</span>`;
+function shiftRange(date, code, start, end) {
+  const info = codeInfo(code);
+  start = start || info?.start; end = end || info?.end;
+  if (!start || !end) return null;
+  const [sh, sm] = start.split(':').map(Number), [eh, em] = end.split(':').map(Number);
+  const s = toDate(date); s.setHours(sh, sm, 0, 0);
+  const e = toDate(date); e.setHours(eh, em, 0, 0);
+  if (e <= s) e.setDate(e.getDate() + 1);
+  return { start: s, end: e, hours: (e - s) / 36e5 };
+}
+// Código que genera evento en el calendario del celular ('' = nada que agendar).
+// Un código configurado sin horario (p. ej. vacaciones) no genera evento; uno desconocido sí (todo el día).
+function workCode(date) {
+  const c = S.shifts[date]?.code || '';
+  if (c && codeInfo(c) && !shiftRange(date, c)) return '';
+  return c;
+}
+const hoursOf = (date, code) => shiftRange(date, code)?.hours || 0;
+
+/* ---------- lectura del Excel ---------- */
+const MESES = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12, jan: 1, apr: 4, aug: 8, dec: 12 };
+const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const normCode = v => { const s = String(v ?? '').trim().toUpperCase().replace(/\s+/g, ''); return /^[-–—./]*$/.test(s) ? '' : s; };
+
+function parseHeaderCell(v) {
+  if (v === '' || v == null) return null;
+  if (typeof v === 'number') {
+    if (v > 20000 && v < 80000) { const p = XLSX.SSF.parse_date_code(v); if (p) return { y: p.y, m: p.m, d: p.d }; }
+    if (Number.isInteger(v) && v >= 1 && v <= 31) return { d: v };
+    return null;
+  }
+  const s = norm(v).trim();
+  let m = s.match(/(\d{1,2})\s*(?:de\s+)?[-\/.]?\s*([a-z]{3,})\.?(?:\s*(?:de\s+|[-\/.]\s*)?(\d{4}))?/);
+  if (m) { const mo = MESES[m[2].slice(0, 3)], d = +m[1]; if (mo && d >= 1 && d <= 31) return { d, m: mo, y: m[3] ? +m[3] : undefined }; }
+  m = s.match(/^(?:[a-z]+\.?\s+)?(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/);
+  if (m) { const d = +m[1], mo = +m[2]; if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) { let y = m[3] ? +m[3] : undefined; if (y && y < 100) y += 2000; return { d, m: mo, y }; } }
+  m = s.match(/^(?:[a-z]+\.?\s+)?(\d{1,2})$/);
+  if (m && +m[1] >= 1 && +m[1] <= 31) return { d: +m[1] };
+  return null;
+}
+
+function parseSheet(ws, forcedYear) {
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true });
+  let best = null;
+  rows.forEach((row, r) => {
+    const cells = row.map((v, c) => ({ c, p: parseHeaderCell(v) })).filter(x => x.p);
+    const full = cells.filter(x => x.p.m).length;
+    const score = full * 2 + (cells.length - full);
+    if (cells.length >= 3 && (!best || score > best.score)) best = { r, cells, full, score };
+  });
+  if (!best) return null;
+
+  const title = rows.slice(0, best.r).flat().map(v => String(v).trim()).filter(Boolean).join(' · ');
+  const tn = norm(title);
+  const useFull = best.full >= 3;
+  const cols = best.cells.filter(x => useFull ? x.p.m : !x.p.m).map(x => ({ c: x.c, ...x.p }));
+
+  // Encabezados con solo el número del día: el mes sale del título (o del mes actual).
+  if (!useFull) {
+    const w = tn.split(/[^a-z]+/).find(w => MES_LARGO.includes(w) || ['setiembre'].includes(w));
+    let mo = w ? MESES[w.slice(0, 3)] : new Date().getMonth() + 1, prev = 0;
+    for (const x of cols) { if (x.d < prev) mo = mo % 12 + 1; x.m = mo; prev = x.d; }
+  }
+  // Año: el del encabezado, el del título, o el que deja la primera fecha más cerca de hoy.
+  const now = new Date();
+  let y = forcedYear || cols[0].y || (tn.match(/\b(20\d{2})\b/) || [])[1];
+  if (!y) {
+    let bestDiff = Infinity;
+    for (const cand of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+      const diff = Math.abs(new Date(cand, cols[0].m - 1, cols[0].d) - now);
+      if (diff < bestDiff) { bestDiff = diff; y = cand; }
+    }
+  }
+  y = +y;
+  const startYear = y;
+  let prevM = cols[0].m;
+  const seen = new Set();
+  const dates = [];
+  for (const x of cols) {
+    if (x.y && !forcedYear) y = x.y; else if (x.m < prevM) y++;
+    prevM = x.m;
+    const s = iso(y, x.m, x.d);
+    if (fromDate(toDate(s)) !== s || seen.has(s)) continue; // 31 nov, repetidos
+    seen.add(s); dates.push({ c: x.c, iso: s });
+  }
+  if (dates.length < 3) return null;
+
+  const firstCol = Math.min(...dates.map(x => x.c));
+  const people = [];
+  for (let r = best.r + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (row.filter(v => parseHeaderCell(v)?.m).length >= 3) continue; // otra fila de fechas
+    const vals = dates.map(x => normCode(row[x.c]));
+    if (vals.every(v => v === '')) continue;
+    let name = row.slice(0, firstCol).map(v => String(v).trim()).filter(v => v && !/^\d+$/.test(v)).join(' ');
+    if (!name) name = `Fila ${r + 1}`;
+    const days = {};
+    dates.forEach((x, i) => { days[x.iso] = vals[i]; });
+    people.push({ name, row: r + 1, days });
+  }
+  if (!people.length) return null;
+  return { title, from: dates[0].iso, to: dates[dates.length - 1].iso, dates: dates.map(x => x.iso), people, startYear };
+}
+
+/* ---------- importar ---------- */
+let imp = null; // { file, wb, sheet, year, person }
+
+$('#file-xlsx').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  if (typeof XLSX === 'undefined') { toast('No se pudo cargar el lector de Excel. Revisa la conexión a internet y vuelve a abrir la página.'); return; }
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+    const sheet = wb.SheetNames.find(n => parseSheet(wb.Sheets[n])) ?? wb.SheetNames[0];
+    imp = { file: f.name, wb, sheet, year: null, person: null };
+    renderImport();
+  } catch (err) {
+    toast('No pude abrir ese archivo. ¿Es un Excel (.xlsx)?');
+  }
+});
+
+function renderImport() {
+  const p = parseSheet(imp.wb.Sheets[imp.sheet], imp.year);
+  const sheetSel = imp.wb.SheetNames.length > 1
+    ? `<div class="field"><label for="imp-sheet">Hoja</label><select id="imp-sheet">${imp.wb.SheetNames.map(n => `<option ${n === imp.sheet ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : '';
+  if (!p) {
+    openSheet(`<h2>No encontré los turnos</h2>
+      <p class="muted">${esc(imp.file)}</p>
+      ${sheetSel}
+      <p>Busco una fila con al menos 3 fechas, por ejemplo <b>02 noviembre</b>, <b>02/11</b> o una fecha de Excel, y debajo una fila por persona con las letras del turno.</p>
+      <button class="btn" data-act="close">Cerrar</button>`);
+    return;
+  }
+  const want = norm(imp.person ?? S.settings.person).trim();
+  const idx = Math.max(0, p.people.findIndex(x => norm(x.name).trim() === want));
+  imp.person = p.people[idx].name;
+  imp.parsed = p;
+  const person = p.people[idx];
+  const unknown = [...new Set(Object.values(person.days).filter(c => c && !codeInfo(c)))];
+  const work = Object.values(person.days).filter(Boolean).length;
+  openSheet(`
+    <h2>Revisar antes de guardar</h2>
+    <p class="muted small">${esc(imp.file)} · hoja ${esc(imp.sheet)}</p>
+    ${p.title ? `<p><b>${esc(p.title)}</b></p>` : ''}
+    ${sheetSel}
+    <div class="fields">
+      <div class="field full"><label for="imp-person">¿Cuál fila es la tuya?</label>
+        <select id="imp-person">${p.people.map((x, i) => `<option value="${i}" ${i === idx ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+      <div class="field"><span class="lbl">Periodo</span><span><b>${fmtShort(p.from)}</b> → <b>${fmtShort(p.to)}</b></span></div>
+      <div class="field"><label for="imp-year">Año de inicio</label><input id="imp-year" type="number" inputmode="numeric" value="${p.startYear}"></div>
+    </div>
+    <div class="strip">${p.dates.map(d => `<div>${chip(person.days[d])}${pad(toDate(d).getDate())}</div>`).join('')}</div>
+    <p class="small muted">${p.dates.length} días · ${work} con turno · ${p.dates.length - work} de descanso</p>
+    ${unknown.length ? `<div class="notice">Códigos que no conozco: <b>${unknown.map(esc).join(', ')}</b>. Se guardan igual; defínelos en Ajustes para darles horario.</div>` : ''}
+    ${S.demo ? `<div class="notice">Se borrarán los datos de ejemplo.</div>` : ''}
+    <div class="row"><button class="btn primary grow" data-act="imp-save">Guardar turnos</button><button class="btn" data-act="close">Cancelar</button></div>`);
+  $('#imp-person').onchange = e => { imp.person = p.people[+e.target.value].name; renderImport(); };
+  $('#imp-year').onchange = e => { const v = +e.target.value; imp.year = v > 2000 && v < 2100 ? v : null; renderImport(); };
+  if ($('#imp-sheet')) $('#imp-sheet').onchange = e => { imp.sheet = e.target.value; imp.year = null; renderImport(); };
+}
+
+function recordChange(date, from, to, src, file, at) {
+  S.changes.unshift({ at, date, from, to, src, file });
+  S.seq[date] = (S.seq[date] || 0) + 1;
+}
+
+function applyImport() {
+  const p = imp.parsed, person = p.people.find(x => x.name === imp.person);
+  if (S.demo) { const keep = S.settings; S = DEFAULT(); S.settings = keep; }
+  const at = Date.now(), found = [];
+  let added = 0;
+  for (const d of p.dates) {
+    const code = person.days[d], prev = S.shifts[d];
+    if (!prev) { S.shifts[d] = { code, src: 'excel' }; added++; continue; }
+    if (prev.code !== code) { recordChange(d, prev.code, code, 'excel', imp.file, at); found.push({ date: d, from: prev.code, to: code }); }
+    S.shifts[d] = { code, src: 'excel' };
+  }
+  S.versions.push({ at, file: imp.file, title: p.title, person: person.name, from: p.from, to: p.to });
+  S.settings.person = person.name;
+  save();
+  viewPeriod = `${p.from}|${p.to}`;
+  const list = found.length ? `<div class="card list">${found.map(changeRow).join('')}</div>` : '';
+  openSheet(found.length
+    ? `<h2>${found.length} ${found.length === 1 ? 'cambio' : 'cambios'} en tu cuadro</h2><p class="muted">Comparado con lo que tenías guardado.</p>${list}
+       <div class="row"><button class="btn primary grow" data-act="view" data-view="sync">Actualizar mis alarmas</button><button class="btn" data-act="close">Ver calendario</button></div>`
+    : `<h2>Turnos guardados</h2><p>${added ? `${added} días nuevos.` : 'No hay cambios frente a lo que tenías guardado.'}</p>
+       <div class="row"><button class="btn primary grow" data-act="view" data-view="sync">Poner alarmas</button><button class="btn" data-act="close">Ver calendario</button></div>`);
+  imp = null;
+  render();
+}
+
+/* ---------- datos de ejemplo ---------- */
+function makeDemo(s) {
+  s.demo = true;
+  s.settings.person = 'Ejemplo';
+  const t = todayIso(), dow = (toDate(t).getDay() + 6) % 7, from = addDays(t, -dow - 7);
+  const pattern = 'C C _ N _ T M M _ N N _ _ C T T _ M C _ N _ _ C M T _ N N _ _ C T M _'.split(' ');
+  pattern.forEach((c, i) => { s.shifts[addDays(from, i)] = { code: c === '_' ? '' : c, src: 'excel' }; });
+  const to = addDays(from, pattern.length - 1), at = Date.now() - 864e5;
+  s.versions.push({ at: at - 864e5 * 2, file: 'ejemplo.xlsx', title: 'Turnos UCI A (ejemplo)', person: 'Ejemplo', from, to });
+  const cd = addDays(t, 2), old = s.shifts[cd].code, nw = old === 'N' ? 'C' : 'N';
+  s.shifts[cd] = { code: nw, src: 'excel' };
+  s.changes.unshift({ at, date: cd, from: old, to: nw, src: 'excel', file: 'ejemplo-corregido.xlsx' });
+  s.seq[cd] = 1;
+  s.extras.push({ id: 'x-demo', date: addDays(t, -3), code: 'T', start: '13:00', end: '19:00', note: 'Cubrí a una compañera', synced: true, at });
+  return s;
+}
+
+/* ---------- eventos ---------- */
+function allEvents() {
+  const ev = [];
+  for (const [d, s] of Object.entries(S.shifts)) { const r = shiftRange(d, s.code); if (r) ev.push({ kind: 'shift', date: d, code: s.code, ...r }); }
+  for (const x of S.extras) { const r = shiftRange(x.date, x.code, x.start, x.end); if (r) ev.push({ kind: 'extra', date: x.date, code: x.code, ...r }); }
+  return ev.sort((a, b) => a.start - b.start);
+}
+function shiftEvent(date) {
+  const code = workCode(date);
+  if (!code) return null;
+  const info = codeInfo(code), r = shiftRange(date, code);
+  return {
+    uid: `turno-${date}@mis-turnos`, seq: S.seq[date] || 0, date,
+    title: info ? `Turno ${info.name} (${code})` : `Turno ${code}`,
+    start: r?.start, end: r?.end, allDay: !r,
+    details: r ? `${info.start} a ${info.end} · ${fmtHours(r.hours)}` : 'Código sin horario definido en Mis Turnos',
+  };
+}
+function extraEvent(x) {
+  const r = shiftRange(x.date, x.code, x.start, x.end);
+  return { uid: `extra-${x.id}@mis-turnos`, seq: 0, date: x.date, title: `Turno EXTRA ${codeName(x.code)}`, start: r.start, end: r.end, allDay: false, details: `${x.start} a ${x.end} · ${fmtHours(r.hours)}${x.note ? ' · ' + x.note : ''}` };
+}
+const fmtLocal = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+const fmtUTC = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+function gcalLink(ev) {
+  const dates = ev.allDay ? `${ev.date.replace(/-/g, '')}/${addDays(ev.date, 1).replace(/-/g, '')}` : `${fmtLocal(ev.start)}/${fmtLocal(ev.end)}`;
+  let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(ev.title)}&dates=${dates}&details=${encodeURIComponent(ev.details)}${tz ? '&ctz=' + encodeURIComponent(tz) : ''}`;
+}
+const icsEsc = t => String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+function buildIcs(events) {
+  const st = S.settings, L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mis Turnos//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Turnos'];
+  const stamp = fmtUTC(new Date());
+  for (const ev of events) {
+    L.push('BEGIN:VEVENT', `UID:${ev.uid}`, `SEQUENCE:${ev.seq}`, `DTSTAMP:${stamp}`);
+    if (ev.allDay) L.push(`DTSTART;VALUE=DATE:${ev.date.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${addDays(ev.date, 1).replace(/-/g, '')}`);
+    else L.push(`DTSTART:${fmtLocal(ev.start)}`, `DTEND:${fmtLocal(ev.end)}`);
+    L.push(`SUMMARY:${icsEsc(ev.title)}`, `DESCRIPTION:${icsEsc(ev.details)}`);
+    if (!ev.allDay) {
+      if (+st.alarmMin > 0) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(ev.title)}`, `TRIGGER:-PT${+st.alarmMin}M`, 'END:VALARM');
+      if (st.nightBefore && st.nightTime) {
+        const [h, m] = st.nightTime.split(':').map(Number), t = toDate(addDays(ev.date, -1)); t.setHours(h, m, 0, 0);
+        if (t < ev.start) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:Mañana: ${icsEsc(ev.title)}`, `TRIGGER;VALUE=DATE-TIME:${fmtUTC(t)}`, 'END:VALARM');
+      }
+    }
+    L.push('END:VEVENT');
+  }
+  L.push('END:VCALENDAR');
+  return L.join('\r\n') + '\r\n';
+}
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/* ---------- pendientes para el calendario del celular ---------- */
+function pending() {
+  const t = todayIso(), add = [], del = [];
+  const dates = [...new Set([...Object.keys(S.shifts), ...Object.keys(S.synced)])].filter(d => d >= t).sort();
+  for (const d of dates) {
+    const cur = workCode(d), was = S.synced[d] || '';
+    if (cur === was) continue;
+    if (cur) add.push({ kind: 'shift', date: d, from: was, to: cur });
+    else del.push({ kind: 'shift', date: d, code: was });
+  }
+  S.toDelete.forEach((x, i) => { if (x.date >= t) del.push({ kind: 'old', date: x.date, code: x.code, i }); });
+  for (const x of S.extras) if (!x.synced && x.date >= t) add.push({ kind: 'extra', date: x.date, extra: x });
+  add.sort((a, b) => a.date.localeCompare(b.date));
+  del.sort((a, b) => a.date.localeCompare(b.date));
+  return { add, del };
+}
+function markAdded(item) {
+  if (item.kind === 'extra') { item.extra.synced = true; return; }
+  if (item.from) S.toDelete.push({ date: item.date, code: item.from });
+  S.synced[item.date] = item.to;
+}
+
+/* ---------- vistas ---------- */
+let view = 'cal', viewPeriod = null;
+
+function periods() {
+  const seen = new Map();
+  for (const v of [...S.versions].reverse()) { const k = `${v.from}|${v.to}`; if (!seen.has(k)) seen.set(k, { key: k, from: v.from, to: v.to }); }
+  return [...seen.values()].sort((a, b) => b.from.localeCompare(a.from));
+}
+const periodLabel = p => `${pad(toDate(p.from).getDate())} ${MES[toDate(p.from).getMonth()]} – ${pad(toDate(p.to).getDate())} ${MES[toDate(p.to).getMonth()]} ${toDate(p.to).getFullYear()}`;
+
+function render() {
+  $('#who').textContent = S.demo ? 'Datos de ejemplo' : (S.settings.person || 'Sin cuadro cargado');
+  $('#banner').innerHTML = !storageOK
+    ? `<div class="notice">Este navegador no deja guardar datos. Lo que cargues se perderá al cerrar la página.</div>`
+    : S.demo ? `<div class="notice"><span>Estás viendo <strong>datos de ejemplo</strong>. Carga tu Excel para empezar.</span><label class="btn small primary" for="file-xlsx">Cargar Excel</label></div>` : '';
+  const newChanges = S.changes.filter(c => c.at > S.seen).length;
+  const pend = pending(), pendN = pend.add.length + pend.del.length;
+  $('#badge-changes').hidden = !newChanges || view === 'changes'; $('#badge-changes').textContent = newChanges;
+  $('#badge-sync').hidden = !pendN; $('#badge-sync').textContent = pendN;
+  document.querySelectorAll('.view').forEach(s => { s.hidden = s.id !== 'view-' + view; });
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-current', b.dataset.view === view ? 'page' : 'false'));
+  ({ cal: renderCal, changes: renderChanges, extras: renderExtras, sync: renderSync, settings: renderSettings })[view]();
+}
+
+function nextBlock() {
+  const now = new Date(), ev = allEvents().find(e => e.end > now);
+  if (!ev) return `<div class="card"><p class="muted">No hay turnos próximos guardados. Carga el cuadro del siguiente periodo.</p></div>`;
+  const t = todayIso(), during = ev.start <= now;
+  const day = ev.date === t ? 'Hoy' : ev.date === addDays(t, 1) ? 'Mañana' : cap(fmtShort(ev.date));
+  const ms = ev.start - now, h = Math.floor(ms / 36e5), m = Math.floor((ms % 36e5) / 6e4);
+  const until = during ? 'En turno ahora' : h >= 48 ? `Faltan ${Math.round(h / 24)} días` : h >= 1 ? `Faltan ${h} h ${m} min` : `Faltan ${m} min`;
+  const hh = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `<div class="card next">
+    <div class="big ${kls(ev.code)}">${esc(ev.code)}</div>
+    <div><p class="label">${ev.kind === 'extra' ? 'Próximo · turno extra' : 'Próximo turno'}</p>
+    <p class="when">${day} · ${esc(codeName(ev.code))}</p>
+    <p class="hours"><span class="mono">${hh(ev.start)}–${hh(ev.end)}</span> · ${until}</p></div></div>`;
+}
+
+function renderCal() {
+  const el = $('#view-cal'), ps = periods();
+  if (!ps.length) {
+    el.innerHTML = `<div class="card empty"><h2>Aún no hay turnos</h2><p>Carga el Excel del cuadro y elige tu fila.</p><label class="btn primary" for="file-xlsx">Cargar Excel</label></div>`;
+    return;
+  }
+  const t = todayIso();
+  if (!ps.find(p => p.key === viewPeriod)) viewPeriod = (ps.find(p => p.from <= t && t <= p.to) || ps[0]).key;
+  const p = ps.find(x => x.key === viewPeriod);
+  const lastChange = {};
+  for (const c of S.changes) if (!lastChange[c.date]) lastChange[c.date] = c;
+  const extrasBy = {};
+  for (const x of S.extras) (extrasBy[x.date] = extrasBy[x.date] || []).push(x);
+
+  const start = addDays(p.from, -((toDate(p.from).getDay() + 6) % 7));
+  const end = addDays(p.to, (7 - toDate(p.to).getDay()) % 7);
+  let cells = '';
+  for (let d = start, first = true; d <= end; d = addDays(d, 1), first = false) {
+    const out = d < p.from || d > p.to, code = S.shifts[d]?.code || '', info = codeInfo(code), dt = toDate(d);
+    const mon = first || dt.getDate() === 1 ? `<b>${MES[dt.getMonth()]}</b>` : '';
+    const mk = (lastChange[d] && !out ? `<span class="chg" title="Cambió">↻</span>` : '') + (extrasBy[d] ? `<span title="Turno extra">+${extrasBy[d].length}</span>` : '');
+    cells += `<button class="day ${code ? kls(code) : ''} ${out ? 'out' : ''} ${d < t ? 'past' : ''} ${d === t ? 'today' : ''}" data-act="day" data-date="${d}" aria-label="${fmtLong(d)}: ${esc(codeName(code))}">
+      <span class="dn">${pad(dt.getDate())}${mon}</span><span class="cd">${code ? esc(code) : ''}</span>
+      <span class="hr">${info && info.start ? info.start.slice(0, 2) + '–' + info.end.slice(0, 2) : ''}</span>${mk ? `<span class="mk">${mk}</span>` : ''}</button>`;
+  }
+  const counts = {}; let hours = 0;
+  for (let d = p.from; d <= p.to; d = addDays(d, 1)) { const c = S.shifts[d]?.code; if (c) { counts[c] = (counts[c] || 0) + 1; hours += hoursOf(d, c); } }
+  const ex = S.extras.filter(x => x.date >= p.from && x.date <= p.to);
+  const exH = ex.reduce((a, x) => a + (shiftRange(x.date, x.code, x.start, x.end)?.hours || 0), 0);
+  const order = [...Object.keys(S.settings.codes), ...Object.keys(counts).filter(c => !codeInfo(c))];
+
+  el.innerHTML = `${nextBlock()}
+    <div class="period"><select id="sel-period" aria-label="Periodo">${ps.map(x => `<option value="${x.key}" ${x.key === p.key ? 'selected' : ''}>${periodLabel(x)}</option>`).join('')}</select></div>
+    <div class="grid">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(w => `<div class="wd">${w}</div>`).join('')}${cells}</div>
+    <div class="legend">${order.map(c => `<span>${chip(c)}${esc(codeName(c))}${counts[c] ? ` · <b class="mono">${counts[c]}</b>` : ''}</span>`).join('')}
+      <span><span class="chip k-X" style="background:var(--warn);color:var(--surface)">↻</span>cambiado</span></div>
+    <div class="stats">
+      <div class="stat"><b>${Object.values(counts).reduce((a, b) => a + b, 0)}</b><span>turnos del cuadro</span></div>
+      <div class="stat"><b>${fmtHours(hours)}</b><span>horas del cuadro</span></div>
+      <div class="stat"><b>${ex.length}</b><span>extras · ${fmtHours(exH)}</span></div>
+    </div>
+    <p class="small muted">Toca un día para ver su historial, cambiarlo a mano o agendarlo.</p>`;
+  $('#sel-period').onchange = e => { viewPeriod = e.target.value; render(); };
+}
+
+function changeRow(c) {
+  return `<div class="item"><div class="grow"><p class="t">${cap(fmtShort(c.date))}</p>
+    ${c.at ? `<p class="s">${c.src === 'manual' ? 'Cambio manual' : 'Excel ' + esc(c.file || '')} · ${fmtStamp(c.at)}</p>` : `<p class="s">${esc(codeName(c.from))} → ${esc(codeName(c.to))}</p>`}</div>
+    ${chip(c.from)}<span class="arrow">→</span>${chip(c.to)}</div>`;
+}
+
+function renderChanges() {
+  const el = $('#view-changes');
+  const items = S.changes;
+  S.seen = Date.now(); save();
+  $('#badge-changes').hidden = true;
+  const t = todayIso(), up = items.filter(c => c.date >= t), past = items.filter(c => c.date < t);
+  el.innerHTML = `<h2>Cambios en tu cuadro</h2>
+    <p class="muted">Cada vez que cargas un Excel nuevo se compara con el anterior. También aparecen los cambios que hagas a mano.</p>
+    ${!items.length ? `<div class="card empty"><p>Todavía no hay cambios. Cuando te pasen el cuadro corregido, cárgalo y verás aquí qué días se movieron.</p></div>` : ''}
+    ${up.length ? `<p class="group-h">Próximos días</p><div class="card list">${up.map(changeRow).join('')}</div>` : ''}
+    ${past.length ? `<p class="group-h">Días pasados</p><div class="card list">${past.map(changeRow).join('')}</div>` : ''}
+    ${S.versions.length ? `<p class="group-h">Archivos cargados</p><div class="card list">${[...S.versions].reverse().map(v => `<div class="item"><div class="grow"><p class="t">${esc(v.file)}</p><p class="s">${periodLabel(v)} · ${esc(v.person)} · ${fmtStamp(v.at)}</p></div></div>`).join('')}</div>` : ''}`;
+}
+
+let extraDraft = null;
+function renderExtras() {
+  const el = $('#view-extras'), codes = S.settings.codes;
+  const first = Object.keys(codes).find(c => codes[c].start) || '';
+  if (!extraDraft) extraDraft = { date: todayIso(), code: first, start: codes[first]?.start || '07:00', end: codes[first]?.end || '19:00', note: '' };
+  const d = extraDraft;
+  const byMonth = {};
+  for (const x of [...S.extras].sort((a, b) => b.date.localeCompare(a.date))) (byMonth[x.date.slice(0, 7)] = byMonth[x.date.slice(0, 7)] || []).push(x);
+  const groups = Object.entries(byMonth).map(([ym, xs]) => {
+    const h = xs.reduce((a, x) => a + (shiftRange(x.date, x.code, x.start, x.end)?.hours || 0), 0);
+    const [y, m] = ym.split('-').map(Number);
+    return `<p class="group-h">${cap(MES_LARGO[m - 1])} ${y} · ${xs.length} ${xs.length === 1 ? 'extra' : 'extras'} · ${fmtHours(h)}</p>
+      <div class="card list">${xs.map(x => {
+        const r = shiftRange(x.date, x.code, x.start, x.end);
+        return `<div class="item">${chip(x.code)}<div class="grow"><p class="t">${cap(fmtShort(x.date))} · <span class="mono">${esc(x.start)}–${esc(x.end)}</span></p>
+          <p class="s">${fmtHours(r?.hours || 0)}${x.note ? ' · ' + esc(x.note) : ''}</p></div>
+          <button class="btn small ghost danger" data-act="extra-del" data-id="${esc(x.id)}">${delArm === x.id ? '¿Borrar?' : 'Borrar'}</button></div>`;
+      }).join('')}</div>`;
+  }).join('');
+  el.innerHTML = `<h2>Turnos extra</h2>
+    <p class="muted">Lleva el registro de los turnos que haces por fuera del cuadro, con sus horas.</p>
+    <form class="card" id="extra-form">
+      <div class="fields">
+        <div class="field"><label for="x-date">Fecha</label><input type="date" id="x-date" value="${d.date}" required></div>
+        <div class="field"><label for="x-code">Tipo</label><select id="x-code">${Object.entries(codes).map(([c, i]) => `<option value="${esc(c)}" ${c === d.code ? 'selected' : ''}>${esc(c)} · ${esc(i.name)}</option>`).join('')}<option value="" ${d.code === '' ? 'selected' : ''}>Otro horario</option></select></div>
+        <div class="field"><label for="x-start">Entrada</label><input type="time" id="x-start" value="${d.start}" required></div>
+        <div class="field"><label for="x-end">Salida</label><input type="time" id="x-end" value="${d.end}" required></div>
+        <div class="field full"><label for="x-note">Nota (opcional)</label><input id="x-note" value="${esc(d.note)}" placeholder="Ej.: reemplazo de Ana, servicio de urgencias"></div>
+      </div>
+      <button class="btn primary" type="submit">Registrar turno extra</button>
+    </form>
+    ${groups || `<div class="card empty"><p>Aún no has registrado turnos extra.</p></div>`}
+    ${S.extras.length ? `<button class="btn" data-act="extras-csv">Descargar registro (CSV para Excel)</button>` : ''}`;
+  const f = $('#extra-form');
+  const sync = () => { d.date = $('#x-date').value; d.start = $('#x-start').value; d.end = $('#x-end').value; d.note = $('#x-note').value; };
+  f.oninput = sync;
+  $('#x-code').onchange = e => { sync(); d.code = e.target.value; const i = codes[d.code]; if (i?.start) { d.start = i.start; d.end = i.end; } renderExtras(); };
+  f.onsubmit = e => {
+    e.preventDefault(); sync();
+    if (!d.date || !d.start || !d.end) return;
+    S.extras.push({ id: 'x' + Date.now().toString(36), date: d.date, code: d.code || 'X', start: d.start, end: d.end, note: d.note.trim(), synced: false, at: Date.now() });
+    save(); extraDraft = null;
+    toast('Turno extra registrado'); render();
+  };
+}
+
+function renderSync() {
+  const el = $('#view-sync'), st = S.settings, { add, del } = pending();
+  const addRow = it => {
+    const ev = it.kind === 'extra' ? extraEvent(it.extra) : shiftEvent(it.date);
+    const what = it.kind === 'extra' ? 'Turno extra' : it.from ? `Cambió: ${codeName(it.from)} → ${codeName(it.to)}` : 'Nuevo';
+    const key = it.kind === 'extra' ? 'x:' + it.extra.id : 's:' + it.date;
+    return `<div class="item">${chip(it.kind === 'extra' ? it.extra.code : it.to)}<div class="grow"><p class="t">${cap(fmtShort(it.date))}</p><p class="s">${esc(what)}</p></div>
+      <a class="btn small" href="${gcalLink(ev)}" target="_blank" rel="noopener" data-act="add-one" data-key="${key}">Agregar</a></div>`;
+  };
+  const delRow = (it, n) => `<div class="item">${chip(it.code)}<div class="grow"><p class="t">${cap(fmtShort(it.date))}</p><p class="s">Borra el evento «${esc(codeName(it.code))}» si sigue en tu calendario</p></div>
+      <button class="btn small" data-act="del-done" data-n="${n}">Ya lo borré</button></div>`;
+  el.innerHTML = `<h2>Alarmas en el celular</h2>
+    <p class="muted">Las alarmas las hace sonar el calendario del celular, aunque esta página esté cerrada. Aquí ves qué falta pasarle.</p>
+    ${!add.length && !del.length ? `<div class="card empty"><h2>Todo al día</h2><p>Tu calendario tiene todos los turnos que vienen.</p></div>` : ''}
+    ${add.length ? `<p class="group-h">Por agregar · ${add.length}</p>
+      <div class="card"><button class="btn primary" data-act="ics-pending">Descargar archivo con ${add.length} ${add.length === 1 ? 'turno' : 'turnos'} (.ics)</button>
+      <p class="small muted">O agrégalos uno por uno a Google Calendar con el botón de cada día.</p>
+      <div class="list">${add.map(addRow).join('')}</div></div>` : ''}
+    ${del.length ? `<p class="group-h">Por borrar · ${del.length}</p><div class="card list">${del.map(delRow).join('')}</div>` : ''}
+    <details class="help"${add.length && !Object.keys(S.synced).length ? ' open' : ''}><summary>Cómo pasar los turnos a un Android</summary>
+      <ol>
+        <li><b>Samsung:</b> descarga el archivo .ics, ábrelo desde Descargas y elige <b>Calendario de Samsung</b>. Respeta las alarmas de abajo.</li>
+        <li><b>Google Calendar:</b> la app no abre archivos .ics. Usa el botón <b>Agregar</b> de cada turno, o en el navegador entra a calendar.google.com (modo «Sitio de escritorio») → Configuración → Importar.</li>
+        <li>Google Calendar ignora las alarmas del archivo: crea un calendario llamado <b>Turnos</b> y ponle notificaciones predeterminadas (por ejemplo, 1 hora antes y el día anterior).</li>
+        <li>Cuando cambie un turno, esta pestaña te dirá qué agregar y qué borrar.</li>
+      </ol></details>
+    <div class="card"><h3>Recordatorios del archivo .ics</h3>
+      <div class="fields">
+        <div class="field"><label for="s-alarm">Aviso antes de entrar</label><select id="s-alarm">${[0, 30, 60, 90, 120, 180].map(m => `<option value="${m}" ${+st.alarmMin === m ? 'selected' : ''}>${m ? (m < 60 ? m + ' min' : m / 60 + ' h').replace('.', ',') + ' antes' : 'Sin aviso'}</option>`).join('')}</select></div>
+        <div class="field"><label for="s-night">Aviso el día anterior</label><input type="time" id="s-night" value="${esc(st.nightTime)}" ${st.nightBefore ? '' : 'disabled'}></div>
+        <label class="check full"><input type="checkbox" id="s-nightb" ${st.nightBefore ? 'checked' : ''}> Avisarme la noche anterior</label>
+      </div></div>
+    <button class="btn" data-act="ics-all">Descargar todos los turnos que vienen (.ics)</button>`;
+  $('#s-alarm').onchange = e => { st.alarmMin = +e.target.value; save(); };
+  $('#s-night').onchange = e => { st.nightTime = e.target.value; save(); };
+  $('#s-nightb').onchange = e => { st.nightBefore = e.target.checked; save(); renderSync(); };
+  el._del = del;
+}
+
+function renderSettings() {
+  const el = $('#view-settings'), codes = S.settings.codes;
+  el.innerHTML = `<h2>Ajustes</h2>
+    <div class="card"><h3>Horario de cada letra</h3>
+      <p class="small muted">Deja la hora vacía para códigos que no son de trabajo (por ejemplo, vacaciones).</p>
+      <div class="codes-table"><span class="h">Letra</span><span class="h">Nombre</span><span class="h">Entra</span><span class="h">Sale</span><span></span>
+      ${Object.entries(codes).map(([c, i]) => `<input value="${esc(c)}" readonly aria-label="Letra"><input data-code="${esc(c)}" data-f="name" value="${esc(i.name)}" aria-label="Nombre de ${esc(c)}">
+        <input type="time" data-code="${esc(c)}" data-f="start" value="${esc(i.start)}" aria-label="Entrada ${esc(c)}"><input type="time" data-code="${esc(c)}" data-f="end" value="${esc(i.end)}" aria-label="Salida ${esc(c)}">
+        <button class="x-btn" data-act="code-del" data-code="${esc(c)}" aria-label="Quitar ${esc(c)}">×</button>`).join('')}</div>
+      <form class="row" id="code-add"><input id="new-code" maxlength="3" placeholder="Letra nueva" style="flex:1;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 12px"><button class="btn" type="submit">Agregar letra</button></form>
+    </div>
+    <div class="card"><h3>Copia de seguridad</h3>
+      <p class="small muted">Tus turnos, cambios y extras se guardan solo en este navegador. Descarga una copia de vez en cuando, sobre todo antes de cambiar de celular.</p>
+      <div class="row"><button class="btn grow" data-act="backup">Descargar copia</button><label class="btn grow" for="file-backup">Restaurar copia</label><input type="file" id="file-backup" accept=".json" hidden></div>
+    </div>
+    <div class="card"><h3>Borrar todo</h3><p class="small muted">Elimina turnos, cambios y extras de este celular.</p>
+      <button class="btn danger" data-act="reset">${resetArm ? 'Toca otra vez para borrar todo' : 'Borrar todos los datos'}</button></div>`;
+  el.querySelectorAll('[data-code][data-f]').forEach(inp => inp.onchange = () => { codes[inp.dataset.code][inp.dataset.f] = inp.value; save(); });
+  $('#code-add').onsubmit = e => {
+    e.preventDefault();
+    const c = normCode($('#new-code').value);
+    if (!c) return;
+    if (codes[c]) { toast(`La letra ${c} ya existe`); return; }
+    codes[c] = { name: c, start: '', end: '' }; save(); renderSettings();
+  };
+  $('#file-backup').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (!d.shifts || !d.settings) throw new Error();
+      const b = DEFAULT(); S = { ...b, ...d, settings: { ...b.settings, ...d.settings } }; save(); toast('Copia restaurada'); view = 'cal'; render();
+    } catch (err) { toast('Ese archivo no es una copia de Mis Turnos'); }
+  };
+}
+
+/* ---------- detalle de un día ---------- */
+function openDay(date) {
+  const cur = S.shifts[date]?.code || '', r = shiftRange(date, cur);
+  const hist = S.changes.filter(c => c.date === date);
+  const ex = S.extras.filter(x => x.date === date);
+  const ev = shiftEvent(date);
+  const opts = ['', ...Object.keys(S.settings.codes)]; if (cur && !opts.includes(cur)) opts.push(cur);
+  openSheet(`<h2>${fmtLong(date)}</h2>
+    <div class="row">${chip(cur)}<div><p class="t"><b>${esc(codeName(cur))}</b></p>${r ? `<p class="small muted mono">${esc(codeInfo(cur).start)}–${esc(codeInfo(cur).end)} · ${fmtHours(r.hours)}</p>` : ''}</div></div>
+    ${hist.length ? `<div class="card list"><p class="group-h">Historial de este día</p>${hist.map(c => `<div class="item">${chip(c.from)}<span class="arrow">→</span>${chip(c.to)}<div class="grow"><p class="s">${c.src === 'manual' ? 'Cambio manual' : 'Excel ' + esc(c.file || '')} · ${fmtStamp(c.at)}</p></div></div>`).join('')}</div>` : ''}
+    ${ex.length ? `<div class="card list"><p class="group-h">Turnos extra</p>${ex.map(x => `<div class="item">${chip(x.code)}<div class="grow"><p class="t mono">${esc(x.start)}–${esc(x.end)}</p>${x.note ? `<p class="s">${esc(x.note)}</p>` : ''}</div></div>`).join('')}</div>` : ''}
+    <div class="field"><label for="day-code">¿Te cambiaron el turno? Corrígelo aquí</label>
+      <div class="row"><select id="day-code" class="grow" style="min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 12px">${opts.map(c => `<option value="${esc(c)}" ${c === cur ? 'selected' : ''}>${c ? esc(c) + ' · ' + esc(codeName(c)) : 'Descanso'}</option>`).join('')}</select>
+      <button class="btn" data-act="day-save" data-date="${date}">Guardar</button></div></div>
+    <div class="row">
+      ${ev ? `<a class="btn grow" href="${gcalLink(ev)}" target="_blank" rel="noopener">Agregar a Google Calendar</a>` : ''}
+      <button class="btn grow" data-act="day-extra" data-date="${date}">Registrar extra este día</button>
+    </div>
+    <button class="btn ghost" data-act="close">Cerrar</button>`);
+}
+
+/* ---------- hoja inferior y avisos ---------- */
+function openSheet(html) { $('#sheet-body').innerHTML = html; $('#sheet').hidden = false; $('#sheet-body').scrollTop = 0; }
+function closeSheet() { $('#sheet').hidden = true; imp = null; }
+$('#sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
+let toastTimer;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3200); }
+
+/* ---------- acciones ---------- */
+let delArm = null, resetArm = false;
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.dataset.act;
+  if (act !== 'extra-del') delArm = null;
+  if (act !== 'reset') resetArm = false;
+  switch (act) {
+    case 'view': closeSheet(); view = b.dataset.view; render(); window.scrollTo(0, 0); break;
+    case 'close': closeSheet(); break;
+    case 'imp-save': applyImport(); break;
+    case 'day': openDay(b.dataset.date); break;
+    case 'day-save': {
+      const d = b.dataset.date, to = $('#day-code').value, from = S.shifts[d]?.code || '';
+      if (to !== from) { recordChange(d, from, to, 'manual', '', Date.now()); S.shifts[d] = { code: to, src: 'manual' }; save(); toast('Turno corregido. Revisa la pestaña Alarmas.'); }
+      closeSheet(); render(); break;
+    }
+    case 'day-extra': {
+      const d = b.dataset.date, c = S.shifts[d]?.code, i = codeInfo(c);
+      extraDraft = { date: d, code: i?.start ? c : (Object.keys(S.settings.codes)[0] || ''), start: '', end: '', note: '' };
+      const i2 = codeInfo(extraDraft.code); extraDraft.start = i2?.start || '07:00'; extraDraft.end = i2?.end || '19:00';
+      closeSheet(); view = 'extras'; render(); window.scrollTo(0, 0); break;
+    }
+    case 'extra-del':
+      if (delArm !== b.dataset.id) { delArm = b.dataset.id; renderExtras(); break; }
+      S.extras = S.extras.filter(x => x.id !== b.dataset.id); delArm = null; save(); toast('Turno extra borrado'); render(); break;
+    case 'extras-csv': {
+      const rows = [['Fecha', 'Tipo', 'Entrada', 'Salida', 'Horas', 'Nota']];
+      for (const x of [...S.extras].sort((a, b) => a.date.localeCompare(b.date))) rows.push([x.date, codeName(x.code), x.start, x.end, String(Math.round((shiftRange(x.date, x.code, x.start, x.end)?.hours || 0) * 10) / 10).replace('.', ','), x.note]);
+      download('turnos-extra.csv', '\ufeff' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
+      break;
+    }
+    case 'add-one': {
+      const { add } = pending(), key = b.dataset.key;
+      const it = add.find(x => (x.kind === 'extra' ? 'x:' + x.extra.id : 's:' + x.date) === key);
+      if (it) { markAdded(it); save(); setTimeout(render, 300); }
+      break; // el enlace sigue abriendo Google Calendar
+    }
+    case 'del-done': {
+      const it = $('#view-sync')._del[+b.dataset.n];
+      if (it.kind === 'old') S.toDelete.splice(it.i, 1); else delete S.synced[it.date];
+      save(); render(); break;
+    }
+    case 'ics-pending': {
+      const { add } = pending();
+      download(`turnos-${todayIso()}.ics`, buildIcs(add.map(it => it.kind === 'extra' ? extraEvent(it.extra) : shiftEvent(it.date))), 'text/calendar');
+      add.forEach(markAdded); save(); toast('Archivo descargado. Ábrelo desde Descargas.'); render(); break;
+    }
+    case 'ics-all': {
+      const t = todayIso(), dates = Object.keys(S.shifts).filter(d => d >= t && workCode(d)).sort();
+      const xs = S.extras.filter(x => x.date >= t);
+      if (!dates.length && !xs.length) { toast('No hay turnos próximos'); break; }
+      download(`turnos-completo-${t}.ics`, buildIcs([...dates.map(shiftEvent), ...xs.map(extraEvent)]), 'text/calendar');
+      for (const d of dates) S.synced[d] = workCode(d);
+      xs.forEach(x => { x.synced = true; });
+      save(); toast('Archivo descargado. Ábrelo desde Descargas.'); render(); break;
+    }
+    case 'code-del': delete S.settings.codes[b.dataset.code]; save(); renderSettings(); break;
+    case 'backup': download(`mis-turnos-copia-${todayIso()}.json`, JSON.stringify(S, null, 1), 'application/json'); break;
+    case 'reset':
+      if (!resetArm) { resetArm = true; renderSettings(); break; }
+      resetArm = false; S = DEFAULT(); save(); view = 'cal'; toast('Datos borrados'); render(); break;
+  }
+});
+
+S = load();
+render();
+setInterval(() => { if (view === 'cal' && $('#sheet').hidden) renderCal(); }, 60000);
+</script>
+</body>
+</html>
