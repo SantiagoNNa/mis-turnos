@@ -673,7 +673,8 @@ function renderCal() {
   const order = [...Object.keys(S.settings.codes), ...Object.keys(counts).filter(c => !S.settings.codes[c])];
 
   el.innerHTML = `${nextBlock()}
-    <div class="period"><select id="sel-period" aria-label="Periodo">${ps.map(x => `<option value="${x.key}" ${x.key === p.key ? 'selected' : ''}>${periodLabel(x)}</option>`).join('')}</select></div>
+    <div class="period"><select id="sel-period" aria-label="Periodo">${ps.map(x => `<option value="${x.key}" ${x.key === p.key ? 'selected' : ''}>${periodLabel(x)}</option>`).join('')}</select>
+      <button class="btn small ghost danger" data-act="period-ask" data-key="${p.key}">Borrar</button></div>
     <div class="grid">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(w => `<div class="wd">${w}</div>`).join('')}${cells}</div>
     <div class="legend">${order.map(c => `<span>${chip(c)}${esc(codeName(c))}${counts[c] ? ` · <b class="mono">${counts[c]}</b>` : ''}</span>`).join('')}
       <span><span class="chip k-X" style="background:var(--warn);color:var(--surface)">↻</span>cambiado</span></div>
@@ -686,10 +687,13 @@ function renderCal() {
   $('#sel-period').onchange = e => { viewPeriod = e.target.value; render(); };
 }
 
-function changeRow(c) {
+// withDel: en la pestaña Cambios, botón para descartar un cambio que no fue real (p. ej. por un Excel mal cargado).
+function changeRow(c, withDel) {
+  const i = S.changes.indexOf(c);
   return `<div class="item"><div class="grow"><p class="t">${cap(fmtShort(c.date))}</p>
     ${c.at ? `<p class="s">${c.src === 'manual' ? 'Cambio manual' : 'Excel ' + esc(c.file || '')} · ${fmtStamp(c.at)}</p>` : `<p class="s">${esc(codeName(c.from))} → ${esc(codeName(c.to))}</p>`}</div>
-    ${chip(c.from)}<span class="arrow">→</span>${chip(c.to)}</div>`;
+    ${chip(c.from)}<span class="arrow">→</span>${chip(c.to)}
+    ${withDel === true ? `<button class="x-btn" data-act="chg-del" data-i="${i}" aria-label="Descartar este cambio">×</button>` : ''}</div>`;
 }
 
 function renderChanges() {
@@ -701,8 +705,9 @@ function renderChanges() {
   el.innerHTML = `<h2>Cambios en tu cuadro</h2>
     <p class="muted">Cada vez que cargas un Excel nuevo se compara con el anterior. También aparecen los cambios que hagas a mano.</p>
     ${!items.length ? `<div class="card empty"><p>Todavía no hay cambios. Cuando te pasen el cuadro corregido, cárgalo y verás aquí qué días se movieron.</p></div>` : ''}
-    ${up.length ? `<p class="group-h">Próximos días</p><div class="card list">${up.map(changeRow).join('')}</div>` : ''}
-    ${past.length ? `<p class="group-h">Días pasados</p><div class="card list">${past.map(changeRow).join('')}</div>` : ''}
+    ${up.length ? `<p class="group-h">Próximos días</p><div class="card list">${up.map(c => changeRow(c, true)).join('')}</div>` : ''}
+    ${past.length ? `<p class="group-h">Días pasados</p><div class="card list">${past.map(c => changeRow(c, true)).join('')}</div>` : ''}
+    ${items.length ? `<p class="small muted">Toca × para descartar un cambio que no fue real, por ejemplo si cargaste un Excel con el periodo equivocado.</p>` : ''}
     ${S.versions.length ? `<p class="group-h">Archivos cargados</p><div class="card list">${[...S.versions].reverse().map(v => `<div class="item"><div class="grow"><p class="t">${esc(v.file)}</p><p class="s">${periodLabel(v)} · ${esc(v.person)} · ${fmtStamp(v.at)}</p></div></div>`).join('')}</div>` : ''}`;
 }
 
@@ -914,6 +919,27 @@ document.addEventListener('click', e => {
       xs.forEach(x => { x.synced = true; });
       save(); toast('Archivo descargado. Ábrelo desde Descargas.'); render(); break;
     }
+    case 'period-ask': {
+      const key = b.dataset.key, [from, to] = key.split('|'), rest = S.versions.filter(v => `${v.from}|${v.to}` !== key);
+      const lose = Object.keys(S.shifts).filter(d => d >= from && d <= to && !rest.some(v => v.from <= d && d <= v.to)).sort();
+      const files = S.versions.filter(v => `${v.from}|${v.to}` === key).map(v => v.file);
+      openSheet(`<h2>Borrar periodo ${periodLabel({ from, to })}</h2>
+        <p>Se quita el cuadro cargado desde <b>${files.map(esc).join(', ')}</b>.</p>
+        <p>${lose.length ? `Se borran <b>${lose.length} días</b> (${fmtShort(lose[0])} → ${fmtShort(lose[lose.length - 1])}) con sus cambios.` : 'No se borra ningún día.'}
+        ${lose.length < Object.keys(S.shifts).filter(d => d >= from && d <= to).length ? ' Los días que también están en otro cuadro se conservan como están.' : ''}</p>
+        <p class="small muted">Si ya habías pasado esos turnos al calendario del celular, la pestaña Alarmas te dirá cuáles borrar. Los turnos extra no se tocan.</p>
+        <div class="row"><button class="btn primary grow" data-act="period-del" data-key="${key}" style="background:var(--danger);border-color:var(--danger)">Borrar periodo</button><button class="btn" data-act="close">Cancelar</button></div>`);
+      break;
+    }
+    case 'period-del': {
+      const key = b.dataset.key, [from, to] = key.split('|');
+      S.versions = S.versions.filter(v => `${v.from}|${v.to}` !== key);
+      const covered = d => S.versions.some(v => v.from <= d && d <= v.to);
+      for (const d of Object.keys(S.shifts)) if (d >= from && d <= to && !covered(d)) delete S.shifts[d];
+      S.changes = S.changes.filter(c => !(c.date >= from && c.date <= to && !covered(c.date)));
+      viewPeriod = null; closeSheet(); save(); toast('Periodo borrado'); render(); break;
+    }
+    case 'chg-del': S.changes.splice(+b.dataset.i, 1); save(); render(); break;
     case 'code-del': delete S.settings.codes[b.dataset.code]; save(); renderSettings(); break;
     case 'backup': download(`mis-turnos-copia-${todayIso()}.json`, JSON.stringify(S, null, 1), 'application/json'); break;
     case 'reset':
